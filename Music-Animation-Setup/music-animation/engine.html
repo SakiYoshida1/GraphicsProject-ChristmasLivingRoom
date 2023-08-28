@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>WebGL Music Animation</title>
+</head>
+<body>
+	<canvas width="0" height="0" id="webgl-canvas"></canvas>
+
+    <script src="../common/webgl-debug.js"></script>
+    <script src="../common/math.js"></script>
+    <script src="../common/gl-utils.js"></script>
+    <script src="../common/input.js"></script>
+    <script src="../common/renderloop.js"></script>
+    <script src="../common/camera.js"></script>
+    <script src="../common/grid.js"></script>
+    <script src="../common/objparser.js"></script>
+    <script src="../common/dat.gui.min.js"></script>
+    <script src="../common/stats.min.js"></script>
+
+    <script src="renderer.js"></script>
+    <script src="modeltransform.js"></script>
+    <script src="primitives.js"></script>
+
+    <script src="howler.js"></script>
+
+    <button id="startbutton" width="300" height="300" onclick="load()" style="
+        background-color: #111111; border: none; color: white; padding: 50px 50px; text-align: center;
+        text-decoration: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        font-size: 50px;">Click here to start the animation</button>
+
+    <script type="text/javascript">
+        "use strict"; // use strict javascript compiling
+
+        //--------------------------------------------------
+        // Global Cashes
+        //--------------------------------------------------
+        var MeshCache = {}; // here all mesh objects are stored, see GLUtils.createMesh() for details on how a mesh is added.
+        var TextureCache = {}; // here all texture objects are stored, see GLUtils.loadTexture() for details on how a texture is added.
+
+        // -----------------------------------------
+        // Global variables
+        // -----------------------------------------
+        var gl;
+        var canvas;
+        var renderLoop;
+
+        var g_renderer;
+
+        var g_camera;
+        var g_cameraController;
+
+        var plane;
+        var present, present1, present2, present3;
+        var cube;
+        var cube1, cube2, cube3, cube4;
+        var wood1, wood2, wood3;
+        var tree;
+        var tree1, tree2, tree3;
+        var star;
+
+        var g_grid
+
+        var timer, timer1 = 0;
+        var music;
+
+        // dat.gui to mute/unmute our sound
+        var gui_data = {mute: false};
+        var gui = new dat.GUI({ width: 100 } );
+        gui.add(gui_data, "mute").onChange(function(value){music?.mute(value);});
+
+        // lighting
+        var g_lightingData = {
+            // TODO: Add lighting data
+            directionalLight: new V3(-0.2, -0.5, -0.5).normalize(), // light direction
+            directionalColor: new V3(1.0, 1.0, 1.0), // light color by default white
+            ambientColor: new V3(0.2, 0.2, 0.2) // dark gray
+        }
+
+        function setup(){
+            canvas = document.getElementById("webgl-canvas");
+            gl = GLUtils.createWebGLInstance(canvas, true);
+            gl.clearColor(0.85, 0.95, 0.9, 1); // set clear color (RGBA)
+            gl.fitScreen();
+            gl.enable(gl.DEPTH_TEST);
+            gl.depthFunc(gl.LEQUAL);
+
+            Input.initialize(canvas);
+            // our shader files are loaded here. Once completed, init is called
+            // for now there is only the standardShader, but you can add more by
+            // simply adding another path into the array shaderPaths.
+            let shaderPaths = ["shaders/standardShader.glsl"];
+            GLUtils.loadShaders(shaderPaths, init);
+        }
+
+        function init(){
+            g_renderer = new Renderer("standardShader");
+
+            g_camera = new PerspectiveCamera(45, 0.1, 1000, canvas.width / canvas.height);
+            g_cameraController = new OrbiterCameraController(canvas, g_camera);
+            g_cameraController.target.set(0,1.5,0);
+
+            // TODO: Load textures and add to materials
+            GLUtils.loadTexture("brickTex", "ressources/brick.jpg")
+            GLUtils.loadTexture("floor", "ressources/floor.jpg")
+            GLUtils.loadTexture("pink", "ressources/pink.jpg")
+            GLUtils.loadTexture("burn", "ressources/burning.jpg")
+            GLUtils.loadTexture("gold", "ressources/gold.jpg")
+            GLUtils.loadTexture("wood", "ressources/wood.png")
+            GLUtils.loadTexture("moss", "ressources/moss.png")
+            let brick = {tint: new V3(1,1,1), mainTexture: "brickTex"}
+            let floor = {tint: new V3(1,1,1), mainTexture: "floor"}
+            let pink = {tint: new V3(1,1,1), mainTexture: "pink"}
+            let burn = {tint: new V3(1,1,1), mainTexture: "burn"}
+            let gold = {tint: new V3(1,1,1), mainTexture: "gold"}
+            let wood = {tint: new V3(1,1,1), mainTexture: "wood"}
+            let moss = {tint: new V3(1,1,1), mainTexture: "moss"}
+
+            let presentMesh = OBJLoader.getMesh("presentMesh", "ressources/presentBox.obj");
+            let starMesh = OBJLoader.getMesh("starMesh", "ressources/star.obj");
+
+            plane = new ModelTransform(Primitives.Plane.getMesh(), floor);
+            present = new ModelTransform(presentMesh, pink);
+            present1 = new ModelTransform(presentMesh, gold);
+            present2 = new ModelTransform(presentMesh, pink);
+            present3 = new ModelTransform(presentMesh, gold);
+            cube = new ModelTransform(Primitives.Cube.getMesh(), brick);
+            cube1 = new ModelTransform(Primitives.Cube.getMesh(), brick);
+            cube2 = new ModelTransform(Primitives.Cube.getMesh(), brick);
+            cube3 = new ModelTransform(Primitives.Cube.getMesh(), brick);
+            cube4 = new ModelTransform(Primitives.Cube.getMesh(), brick);
+            wood1 = new ModelTransform(Primitives.Cylinder.getMesh(), burn);
+            wood2 = new ModelTransform(Primitives.Cylinder.getMesh(), burn);
+            wood3 = new ModelTransform(Primitives.Cylinder.getMesh(), burn);
+            tree = new ModelTransform(Primitives.Cylinder.getMesh(), wood);
+            tree1 = new ModelTransform(Primitives.Pyramid.getMesh(), moss);
+            tree2 = new ModelTransform(Primitives.Pyramid.getMesh(), moss);
+            tree3 = new ModelTransform(Primitives.Pyramid.getMesh(), moss);
+            star = new ModelTransform(starMesh, gold);
+            plane.scale.set(4,4,4);
+            cube.scale.set(15,8,1);
+            cube.position.set(0,4,-7);
+            cube1.position.set(-1.4,1,-6);
+            cube1.scale.set(2,1.75,0.4);
+            cube1.rotation.set(0,90,0);
+            cube2.position.set(0,2,-6);
+            cube2.scale.set(3.25,3,0.4);
+            cube2.rotation.set(90,0,0);
+            cube3.position.set(1.4,1,-6);
+            cube3.scale.set(2,1.75,0.4);
+            cube3.rotation.set(0,90,0);
+            cube4.position.set(0,0.2,-6);
+            cube4.scale.set(3.25,3,0.3);
+            cube4.rotation.set(90,0,0);
+            present.scale.set(0.5,0.5,0.5);
+            present.position.set(0, 1, 0);
+            present1.scale.set(0.5,0.5,0.5);
+            present1.position.set(-4, 3, -2);
+            present1.rotation.set(0,0,15);
+            present2.position.set(4, 2, 2);
+            present2.scale.set(0.5, 0.8, 0.5);
+            present2.rotation.set(0, 0, -18);
+            present3.position.set(3, 1, -3.8);
+            present3.scale.set(0.5, 0.8, 0.5);
+            present3.rotation.set(0, 0, -6);
+            wood1.position.set(0,0.52,-5.2);
+            wood1.rotation.set(0,45,90);
+            wood1.scale.set(0.15,0.3,0.15);
+            wood2.position.set(0,0.52,-5.2);
+            wood2.rotation.set(0,0,-70);
+            wood2.scale.set(0.2,0.3,0.2);
+            wood3.position.set(0,0.5,-5.2)
+            wood3.rotation.set(0,0,60);
+            wood3.scale.set(0.1,0.3,0.1);
+            tree.scale.set(1.2,0.8,1.2);
+            tree.position.set(-2.5,0.8,2);
+            tree1.position.set(-2.5,1.5,2);
+            tree1.scale.set(2.9,2.7,2.9);
+            tree2.position.set(-2.5,2.7,2);
+            tree2.scale.set(2.3,1.9,2.1);
+            tree3.position.set(-2.5,3.7,2);
+            tree3.scale.set(1.3,0.9,1.3);
+            star.rotation.set(90,0,0);
+            star.scale.set(0.05,0.05,0.05);
+            star.position.set(-2.5,4.5, 2);
+
+            g_grid = new GridAxis();
+
+            // load an play the music using howler.js
+            // https://howlerjs.com/
+            // documentation: https://github.com/goldfire/howler.js#documentation
+            music = new Howl({
+                src: ['ressources/0052. Christmas Magic - AShamaluevMusic.mp3'],
+                html5: true // use streaming audio if possible
+            });
+            music.play();
+            music.mute(gui_data.mute);
+
+            renderLoop = new RenderLoop(draw).start();
+        }
+
+        function draw(deltaTime){
+            Input.update();
+
+            let bpm = 66; // the skeleton song has 77 beats per minute
+            let bps = bpm/60.0; // this many beats per second
+            let beatDuration = 1.0/bps; // one beat lasts this long
+
+            timer += deltaTime; // count up timer variable
+            if(timer > beatDuration){ // do stuff every beat
+                timer = Time.time % beatDuration; // we can't simply set it to 0 here, because we will accumulate error.
+                                        // deltaTime is not 100% accurate (eg. with 60 fps 60*deltaTime != 1.00)
+                                        // but maybe 0.98 or 1.01.
+                                        // Since we work with sound and want a consistent event at exact intervals,
+                                        // we have to use the Time.time to decide when to act.
+                let r = Math.random();
+                let g = Math.random();
+                let b = Math.random();
+                gl.clearColor(r, g, b, 1); // set clear color (RGBA)
+            }
+
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            g_cameraController.update();
+
+            // scale y by 0.1 up and down bps times a second.
+            present.scale.y = 0.5 + Math.sin((Time.time * Math.PI * 2) * bps) * 0.1;
+            present1.rotation.y = 150*Time.time;
+            present2.position.y = 2 + Math.sin((Time.time * Math.PI * 2) * bps) * 0.2;
+            present2.scale.y = 0.5 + Math.sin((Time.time * Math.PI * 2 + 15) * bps) * 0.1;
+            present3.rotation.x = 300*Time.time;
+            present3.position.y = 2 + Math.sin(0.5 * (Time.time * Math.PI * 2) * bps);
+            present3.position.z = Math.sin((0.5 * Time.time * Math.PI * 2) * bps) - 2;
+
+            plane.update();
+            present.update();
+            present1.update();
+            present2.update();
+            present3.update();
+            cube.update();
+            cube1.update();
+            cube2.update();
+            cube3.update();
+            cube4.update();
+            wood1.update();
+            wood2.update();
+            wood3.update();
+            tree.update();
+            tree1.update();
+            tree2.update();
+            tree3.update();
+            star.update();
+
+            let shaderData = { lightingData: g_lightingData};
+
+            g_renderer.drawModel(plane, g_camera, shaderData);
+            g_renderer.drawModel(present, g_camera, shaderData);
+            g_renderer.drawModel(present1, g_camera, shaderData);
+            g_renderer.drawModel(present2, g_camera, shaderData);
+            g_renderer.drawModel(present3, g_camera, shaderData);
+            g_renderer.drawModel(cube, g_camera, shaderData);
+            g_renderer.drawModel(cube1, g_camera, shaderData);
+            g_renderer.drawModel(cube2, g_camera, shaderData);
+            g_renderer.drawModel(cube3, g_camera, shaderData);
+            g_renderer.drawModel(cube4, g_camera, shaderData);
+            g_renderer.drawModel(wood1, g_camera, shaderData);
+            g_renderer.drawModel(wood2, g_camera, shaderData);
+            g_renderer.drawModel(wood3, g_camera, shaderData);
+            g_renderer.drawModel(tree, g_camera, shaderData);
+            g_renderer.drawModel(tree1, g_camera, shaderData);
+            g_renderer.drawModel(tree2, g_camera, shaderData);
+            g_renderer.drawModel(tree3, g_camera, shaderData);
+            //g_renderer.drawModel(star, g_camera, shaderData);
+
+            g_grid.draw(g_camera);
+
+            timer1 += deltaTime; // count up timer variable
+            if(timer1 > beatDuration * 7){ 
+                tree1.rotation.y = Time.time * 360;
+                tree2.rotation.y = Time.time * 360;
+                tree3.rotation.y = Time.time * 360;
+                g_renderer.drawModel(star, g_camera, shaderData);
+                star.rotation.y = Time.time *360;
+                if(timer1 > beatDuration*8){
+                    timer1 = Time.time % beatDuration * 8;
+                }
+            }
+        }
+
+        // this will be executed when the startbutton is pressed, run the program and delete the button
+        function load(){
+            var button = document.getElementById("startbutton");
+            button.remove();
+            setup();
+        }
+    </script>
+</body>
+</html>
